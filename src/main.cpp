@@ -121,7 +121,7 @@ public:
         int n = read(fd_, buff, 256);
         if (n > 0) {
             std::string recv_data(buff, n);
-            // RCLCPP_INFO(this->get_logger(), "recv %s", recv_data.c_str());
+            RCLCPP_INFO(this->get_logger(), "recv %s", recv_data.c_str());
 
             std::stringstream ss(recv_data);
             std::string token;
@@ -140,6 +140,11 @@ public:
                 return;
             }
 
+            if (result.size() != 6) {
+                RCLCPP_ERROR(this->get_logger(), "Invalid data length: %d", result.size());
+                return;
+            }
+
             sensor_msgs::msg::Imu pub_msg;
             pub_msg.header.stamp = this->get_clock()->now();
             pub_msg.header.frame_id = frame_id_;
@@ -150,6 +155,9 @@ public:
             pub_msg.angular_velocity.x = result[3] * angular_const;
             pub_msg.angular_velocity.y = result[4] * angular_const;
             pub_msg.angular_velocity.z = result[5] * angular_const;
+
+            RCLCPP_INFO(this->get_logger(), "imu_pub x: %f y: %f z: %f", pub_msg.angular_velocity.x,
+                        pub_msg.angular_velocity.y, pub_msg.angular_velocity.z);
 
             pub_->publish(pub_msg);
         }
