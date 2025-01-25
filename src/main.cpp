@@ -41,6 +41,7 @@ public:
         }
     }
 
+private:
     bool openSerialPort() {
         this->declare_parameter("serial_name", "/dev/ttyUSB0");
         this->declare_parameter("baudrate", 115200);
@@ -107,67 +108,108 @@ public:
     }
 
     void timerCallback() {
-        constexpr double gravity = 9.8;
-        constexpr double linear_const = gravity * 0.061 / 1000;        // [m/s^2]
-        constexpr double angular_const = (M_PI / 180.0) * 35.0 / 1000; // [rad/s]
-
         if (fd_ < 0) {
             RCLCPP_ERROR(this->get_logger(), "Serial port is not open");
             return;
         }
 
-        char buff[256];
+        char tmp[256];
 
-        int n = read(fd_, buff, 256);
+        int n = read(fd_, tmp, 256 - 1);
+
         if (n > 0) {
-            std::string recv_data(buff, n);
-            RCLCPP_INFO(this->get_logger(), "recv %s", recv_data.c_str());
+            // 前ループの残りのデータと結合
+            tmp[n] = '\0';
+            buffer_ += tmp;
 
-            std::stringstream ss(recv_data);
-            std::string token;
-            std::vector<int> result;
-            try {
-                while (std::getline(ss, token, ',')) {
-                    result.push_back(std::stoi(token));
-                }
-            } catch (const std::invalid_argument &e) {
-                RCLCPP_ERROR(this->get_logger(), "invalid argument: %s", e.what());
-                // 改行コードのみが送られてくるときがある
-                // とりあえず動く
-                return;
-            } catch (const std::out_of_range &e) {
-                RCLCPP_ERROR(this->get_logger(), "out of range: %s", e.what());
-                return;
+            auto datas = splitString(buffer_, '\r');
+
+            for (size_t i = 0; i < datas.size() - 1; ++i) {
+                publishData(datas[i]);
             }
 
-            if (result.size() != 6) {
-                RCLCPP_ERROR(this->get_logger(), "Invalid data length: %d", result.size());
-                return;
-            }
-
-            sensor_msgs::msg::Imu pub_msg;
-            pub_msg.header.stamp = this->get_clock()->now();
-            pub_msg.header.frame_id = frame_id_;
-
-            pub_msg.linear_acceleration.x = result[0] * linear_const;
-            pub_msg.linear_acceleration.y = result[1] * linear_const;
-            pub_msg.linear_acceleration.z = result[2] * linear_const;
-            pub_msg.angular_velocity.x = result[3] * angular_const;
-            pub_msg.angular_velocity.y = result[4] * angular_const;
-            pub_msg.angular_velocity.z = result[5] * angular_const;
-
-            RCLCPP_INFO(this->get_logger(), "imu_pub x: %f y: %f z: %f", pub_msg.angular_velocity.x,
-                        pub_msg.angular_velocity.y, pub_msg.angular_velocity.z);
-
-            pub_->publish(pub_msg);
+            buffer_ = datas.back();
         }
     }
 
-private:
+    void publishData(const std::string &data) {
+        constexpr double gravity = 9.8;
+        constexpr double linear_const = gravity * 0.061 / 1000;        // [m/s^2]
+        constexpr double angular_const = (M_PI / 180.0) * 35.0 / 1000; // [rad/s]
+
+        // std::cout << "publishData: " << visualizeNewlines(data) << std::endl;
+
+        // ','で分割してstd::vector<int>に格納
+        std::vector<int> result;
+        std::stringstream ss(data);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            try {
+                result.push_back(std::stoi(token));
+            } catch (const std::invalid_argument &e) {
+                std::cerr << "Invalid number: " << token << std::endl;
+            } catch (const std::out_of_range &e) {
+                std::cerr << "Number out of range: " << token << std::endl;
+            }
+        }
+
+        if (result.size() < 6) {
+            RCLCPP_ERROR(this->get_logger(), "Invalid data length: %d", result.size());
+            return;
+        }
+
+        sensor_msgs::msg::Imu pub_msg;
+        pub_msg.header.stamp = this->get_clock()->now();
+        pub_msg.header.frame_id = frame_id_;
+
+        pub_msg.linear_acceleration.x = result[0] * linear_const;
+        pub_msg.linear_acceleration.y = result[1] * linear_const;
+        pub_msg.linear_acceleration.z = result[2] * linear_const;
+        pub_msg.angular_velocity.x = result[3] * angular_const;
+        pub_msg.angular_velocity.y = result[4] * angular_const;
+        pub_msg.angular_velocity.z = result[5] * angular_const;
+
+        // RCLCPP_INFO(this->get_logger(), "linear  x: %f y: %f z: %f", pub_msg.linear_acceleration.x,
+        //             pub_msg.linear_acceleration.y, pub_msg.linear_acceleration.z);
+        // RCLCPP_INFO(this->get_logger(), "angular x: %f y: %f z: %f", pub_msg.angular_velocity.x,
+        //             pub_msg.angular_velocity.y, pub_msg.angular_velocity.z);
+
+        pub_->publish(pub_msg);
+    }
+
+    std::vector<std::string> splitString(const std::string &input, char delimiter) {
+        std::vector<std::string> result;
+        size_t start = 0, end = 0;
+        while ((end = input.find(delimiter, start)) != std::string::npos) {
+            result.push_back(input.substr(start, end - start));
+            start = end + 1;
+        }
+        if (start < input.size()) {
+            result.push_back(input.substr(start));
+        }
+        return result;
+    }
+
+    // デバッグ用
+    std::string visualizeNewlines(const std::string &input) {
+        std::string output;
+        for (char c : input) {
+            if (c == '\n') {
+                output += "[LF]";
+            } else if (c == '\r') {
+                output += "[CR]";
+            } else {
+                output += c;
+            }
+        }
+        return output;
+    }
+
     int fd_; // シリアルポートのファイルディスクリプタ
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_;
     std::string frame_id_;
+    std::string buffer_;
 };
 
 int main(int argc, char *argv[]) {
