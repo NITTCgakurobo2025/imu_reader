@@ -1,6 +1,7 @@
 #define _USE_MATH_DEFINES
 
 #include <fcntl.h>
+#include <limits.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -113,9 +114,9 @@ private:
             return;
         }
 
-        char tmp[256];
+        char tmp[LINE_MAX];
 
-        int n = read(fd_, tmp, 256 - 1);
+        int n = read(fd_, tmp, LINE_MAX - 1);
 
         if (n > 0) {
             // 前ループの残りのデータと結合
@@ -154,7 +155,7 @@ private:
         }
 
         if (result.size() < 6) {
-            RCLCPP_ERROR(this->get_logger(), "Invalid data length: %d", result.size());
+            RCLCPP_ERROR(this->get_logger(), "Invalid data length: %ld", result.size());
             return;
         }
 
