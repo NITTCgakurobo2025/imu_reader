@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <iostream>
 #include <map>
 #include <rclcpp/rclcpp.hpp>
@@ -115,21 +116,20 @@ private:
         }
 
         char tmp[LINE_MAX];
-
         int n = read(fd_, tmp, LINE_MAX - 1);
 
         if (n > 0) {
-            // 前ループの残りのデータと結合
-            tmp[n] = '\0';
-            buffer_ += tmp;
+            buffer_.insert(buffer_.end(), tmp, tmp + n);
 
-            auto datas = splitString(buffer_, '\r');
+            while (true) {
+                auto it = std::find(buffer_.begin(), buffer_.end(), '\r');
+                if (it == buffer_.end())
+                    break;
 
-            for (size_t i = 0; i < datas.size() - 1; ++i) {
-                publishData(datas[i]);
+                std::string data(buffer_.begin(), it);
+                publishData(data);
+                buffer_.erase(buffer_.begin(), it + 1);
             }
-
-            buffer_ = datas.back();
         }
     }
 
@@ -178,19 +178,6 @@ private:
         pub_->publish(pub_msg);
     }
 
-    std::vector<std::string> splitString(const std::string &input, char delimiter) {
-        std::vector<std::string> result;
-        size_t start = 0, end = 0;
-        while ((end = input.find(delimiter, start)) != std::string::npos) {
-            result.push_back(input.substr(start, end - start));
-            start = end + 1;
-        }
-        if (start < input.size()) {
-            result.push_back(input.substr(start));
-        }
-        return result;
-    }
-
     // デバッグ用
     std::string visualizeNewlines(const std::string &input) {
         std::string output;
@@ -210,7 +197,7 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_;
     std::string frame_id_;
-    std::string buffer_;
+    std::deque<char> buffer_;
 };
 
 int main(int argc, char *argv[]) {
