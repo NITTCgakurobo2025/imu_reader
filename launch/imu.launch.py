@@ -7,9 +7,11 @@ from launch_ros.actions import Node
 def generate_launch_description():
     name_parameter = DeclareLaunchArgument(
         'robot_name',
-        default_value='R1')
+        default_value='')
 
     name = LaunchConfiguration('robot_name')
+
+    frame_name = name if name else name + '/'
 
     return LaunchDescription([
         name_parameter,
@@ -21,7 +23,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'output_topic': 'imu',
-                'frame_id': [name, '/imu_link'],
+                'frame_id': [frame_name, 'imu_link'],
             }]
         )
     ])
